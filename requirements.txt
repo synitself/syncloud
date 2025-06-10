@@ -1,0 +1,6 @@
+python-telegram-bot
+mutagen
+yt-dlp
+scdl
+httpx
+apscheduler
