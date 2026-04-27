@@ -5,7 +5,9 @@ from pathlib import Path
 import io
 from typing import Optional, Tuple, Any, cast
 import os
-from datetime import datetime, timezone  # Added for unique temp folder names
+from datetime import datetime, timezone
+from PIL import Image
+import httpx
 
 from telegram import Update, Message
 from telegram.ext import ContextTypes
@@ -25,7 +27,63 @@ import ui_texts
 logger = logging.getLogger(__name__)
 
 MAX_TELEGRAM_API_RETRIES = 3
-TELEGRAM_API_RETRY_BUFFER = 0.8  # Increased from 0.5
+TELEGRAM_API_RETRY_BUFFER = 0.8
+THUMBNAIL_MAX_SIZE = 320
+THUMBNAIL_MAX_BYTES = 200 * 1024
+
+
+def prepare_thumbnail_for_telegram(artwork_data: bytes) -> Optional[io.BytesIO]:
+    """Resize and convert artwork to JPEG ≤320x320, ≤200KB for Telegram thumbnail."""
+    try:
+        img = Image.open(io.BytesIO(artwork_data))
+        img = img.convert('RGB')
+        img.thumbnail((THUMBNAIL_MAX_SIZE, THUMBNAIL_MAX_SIZE), Image.LANCZOS)
+
+        quality = 90
+        while quality >= 20:
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=quality)
+            if buf.tell() <= THUMBNAIL_MAX_BYTES:
+                buf.seek(0)
+                logger.info(f"Thumbnail подготовлен: {img.size[0]}x{img.size[1]}, {buf.getbuffer().nbytes} bytes, quality={quality}")
+                return buf
+            quality -= 10
+
+        buf.seek(0)
+        return buf
+    except Exception as e_thumb:
+        logger.warning(f"Не удалось подготовить thumbnail: {e_thumb}")
+        return None
+
+
+def fetch_artwork_from_soundcloud(url: str, save_path: Path) -> Optional[Path]:
+    """Fetch track artwork from SoundCloud og:image meta tag.
+    
+    scdl 3.0.2 has a bug: it downloads the thumbnail jpg but deletes it
+    after failing to embed it into m4a files. We fetch it ourselves.
+    """
+    try:
+        import re as _re
+        resp = httpx.get(url, follow_redirects=True, timeout=15,
+                         headers={'User-Agent': 'Mozilla/5.0'})
+        match = _re.search(r'<meta property="og:image" content="([^"]+)"', resp.text)
+        if not match:
+            logger.warning(f"og:image не найден на странице {url}")
+            return None
+        img_url = match.group(1)
+        img_url = _re.sub(r'-t\d+x\d+\.', '-t500x500.', img_url)
+        img_resp = httpx.get(img_url, timeout=15)
+        if img_resp.status_code == 200 and len(img_resp.content) > 100:
+            artwork_file = save_path / "cover.jpg"
+            artwork_file.write_bytes(img_resp.content)
+            logger.info(f"Обложка скачана с SoundCloud: {len(img_resp.content)} bytes -> {artwork_file}")
+            return artwork_file
+        else:
+            logger.warning(f"Не удалось скачать обложку: HTTP {img_resp.status_code}, {len(img_resp.content)} bytes")
+            return None
+    except Exception as e:
+        logger.warning(f"Ошибка при скачивании обложки с SoundCloud: {e}")
+        return None
 
 
 async def modified_handle_soundcloud_link(
@@ -113,6 +171,8 @@ async def modified_handle_soundcloud_link(
                         break
 
         await update_progress_display(0, "TRACK_STAGE_STARTING")
+
+        artwork_external_file_path = fetch_artwork_from_soundcloud(url, request_temp_path)
 
         await update_progress_display(5, "TRACK_STAGE_DOWNLOADING")
         scdl_cmd = ["scdl", "-l", url, "-c", "--path", str(request_temp_path), "--overwrite", "--hide-progress"]
@@ -222,57 +282,51 @@ async def modified_handle_soundcloud_link(
                 artwork_data_to_embed_final = afp.read()
             artwork_mime_type_final = 'image/jpeg' if artwork_external_file_path.suffix.lower() in ['.jpg',
                                                                                                     '.jpeg'] else 'image/png'
+            logger.info(f"Обложка из внешнего файла: {len(artwork_data_to_embed_final)} bytes, mime={artwork_mime_type_final}")
         elif artwork_from_original_data:
             artwork_data_to_embed_final = artwork_from_original_data
             artwork_mime_type_final = artwork_from_original_mime or 'image/jpeg'
+            logger.info(f"Обложка из оригинального аудио: {len(artwork_data_to_embed_final)} bytes, mime={artwork_mime_type_final}")
+        else:
+            logger.warning(f"Обложка не найдена ни из файла, ни из оригинального аудио для {url}")
 
         audio_id3.tags.delall('APIC')
         if artwork_data_to_embed_final and artwork_mime_type_final:
             try:
                 audio_id3.tags.add(APIC(encoding=3, mime=artwork_mime_type_final, type=3, desc='Cover',
                                         data=artwork_data_to_embed_final))
+                logger.info(f"APIC тег добавлен: {len(artwork_data_to_embed_final)} bytes")
             except Exception as e_apic_add:
                 logger.error(f"Не удалось добавить APIC тег: {e_apic_add}");
                 artwork_data_to_embed_final = None
         audio_id3.save()
 
         await update_progress_display(99, "TRACK_STAGE_UPLOADING")
+        raw_artwork_for_thumb: Optional[bytes] = None
         if artwork_data_to_embed_final:
-            embedded_artwork_data_io = io.BytesIO(artwork_data_to_embed_final)
+            raw_artwork_for_thumb = artwork_data_to_embed_final
         else:  # Check if artwork was already in the mp3 and survived conversion
             final_mp3_check = MP3(str(mp3_final_file), ID3=ID3)
             if final_mp3_check.tags:
                 for k_apic_check in list(final_mp3_check.tags.keys()):
                     if k_apic_check.startswith('APIC:'):
-                        embedded_artwork_data_io = io.BytesIO(final_mp3_check.tags[k_apic_check].data);
+                        raw_artwork_for_thumb = final_mp3_check.tags[k_apic_check].data
                         break
 
+        if raw_artwork_for_thumb:
+            embedded_artwork_data_io = prepare_thumbnail_for_telegram(raw_artwork_for_thumb)
+
         telegram_filename = sanitize_filename(f"{performer_str} - {title_str}.mp3")
-        sent_msg_obj = None
-        with open(mp3_final_file, "rb") as audio_file_to_send:
-            for attempt in range(1, MAX_TELEGRAM_API_RETRIES + 1):
-                try:
-                    if embedded_artwork_data_io: embedded_artwork_data_io.seek(0)
-                    audio_file_to_send.seek(0)
-                    sent_msg_obj = await context.bot.send_audio(
-                        chat_id=chat_id, audio=audio_file_to_send, filename=telegram_filename,
-                        title=title_str, performer=performer_str, thumbnail=embedded_artwork_data_io,
-                        reply_to_message_id=reply_to_message_id_for_final_audio if not is_sync_mode else None
-                    )
-                    break
-                except telegram.error.RetryAfter as e_retry_audio:
-                    wait_time = e_retry_audio.retry_after + TELEGRAM_API_RETRY_BUFFER
-                    logger.warning(
-                        f"Flood control sending audio for {url}. Retrying in {wait_time:.2f}s (attempt {attempt}/{MAX_TELEGRAM_API_RETRIES}).")
-                    await asyncio.sleep(wait_time)
-                    if attempt == MAX_TELEGRAM_API_RETRIES: logger.error(
-                        f"Max retries reached sending audio for {url}. Re-raising original error."); raise
-                except telegram.error.TelegramError as e_tg_send_inner:
-                    logger.error(
-                        f"Telegram error during send_audio for {url} (attempt {attempt}/{MAX_TELEGRAM_API_RETRIES}): {e_tg_send_inner}")
-                    if attempt == MAX_TELEGRAM_API_RETRIES: raise
-                    await asyncio.sleep(1 + attempt * 0.5)  # Simple backoff
-            sent_audio_message_id = sent_msg_obj.message_id if sent_msg_obj else None
+        from pyrogram_sender import send_audio_pyrogram
+        sent_audio_message_id = await send_audio_pyrogram(
+            chat_id=chat_id,
+            audio_path=str(mp3_final_file),
+            filename=telegram_filename,
+            title=title_str,
+            performer=performer_str,
+            thumbnail_data=embedded_artwork_data_io,
+            reply_to_message_id=reply_to_message_id_for_final_audio if not is_sync_mode else None,
+        )
         return True, sent_audio_message_id
 
     except (RuntimeError, FileNotFoundError, asyncio.TimeoutError) as e_proc:

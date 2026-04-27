@@ -1,6 +1,6 @@
 MENU_TITLE = "🤖 *Меню*"
-MENU_CLOSED = "Меню закрыто\\." # For Markdown V2 edit fallback
-MENU_CLOSED_CONFIRMATION_SHORT = "Меню закрыто." # For query.answer simple text
+MENU_CLOSED = "Меню закрыто\\."
+MENU_CLOSED_CONFIRMATION_SHORT = "Меню закрыто."
 MENU_CLOSE_ERROR_ALERT = "Ошибка при закрытии меню."
 
 
@@ -20,7 +20,7 @@ BUTTON_BACK_TO_SETTINGS = "🔙 Назад"
 INFO_BOT_TEXT_FORMAT = (
     "ℹ️ *Информация о боте*\n\n"
     "Этот бот поможет вам скачивать треки с SoundCloud и автоматически синхронизировать вашу медиатеку лайков.\n\n"
-    "➡️ *Как пользоваться:*\n" # Оставляем стрелку, если она была в вашем оригинале
+    "➡️ *Как пользоваться:*\n"
     "1. Отправьте боту ссылку на трек с `soundcloud.com`.\n"
     "2. Для настройки автоматической синхронизации лайков перейдите в `⚙️ Настройки` (`/start` или `/menu`).\n"
     "3. Проверить ошибки обработки можно в `📜 Журнал ошибок`.\n\n"
@@ -58,14 +58,14 @@ ERROR_LOG_ENTRY_CONTEXT_FORMAT = "🔗 `{context_info}`\n"
 ERROR_LOG_SEPARATOR = "\\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \\_ \n\n"
 BUTTON_CLEAR_ERROR_LOG = "🗑️ Очистить журнал"
 ERROR_LOG_CLEARED_ALERT = "Журнал ошибок очищен!"
-BUTTON_ERROR_LOG_NEXT_PAGE = "➡️ След. стр." # Оставляем стрелку
-BUTTON_ERROR_LOG_PREV_PAGE = "⬅️ Пред. стр." # Оставляем стрелку
+BUTTON_ERROR_LOG_NEXT_PAGE = "➡️ След. стр."
+BUTTON_ERROR_LOG_PREV_PAGE = "⬅️ Пред. стр."
 ERROR_LOG_PAGE_X_OF_Y_FORMAT = "\n\n📄 Стр\\. {current_page_display} из {total_pages_display}"
 
 STATUS_LOADING_SETTINGS_ERROR = "❌ Не удалось загрузить ваши настройки\\."
 STATUS_SYNC_IN_PROGRESS_FORMAT = "⏳"
 STATUS_AUTOSYNC_OFF = "❌ Синхронизация отключена\\. "
-STATUS_AUTOSYNC_ON_NO_USERNAME = "❌ Синхронизация включена, но не указано имя пользователя SoundCloud\\." # ИСПРАВЛЕНО
+STATUS_AUTOSYNC_ON_NO_USERNAME = "❌ Синхронизация включена, но не указано имя пользователя SoundCloud\\."
 STATUS_AUTOSYNC_ON_NEXT_SYNC_APPROX_FORMAT = "✅ Синхронизация вкл\\.\n\n🕒 {next_sync_time} МСК"
 STATUS_AUTOSYNC_ON_FIRST_SYNC_FORMAT = "✅ Синхронизация вкл\\.\n\n🕒 Ожидание следующего цикла проверки\\.\\.\\."
 STATUS_AUTOSYNC_ON_WAITING_NEXT_CYCLE_FORMAT = "✅ Синхронизация вкл\\.\n\n🕒 Ожидание следующего цикла проверки\\.\\.\\."
@@ -74,7 +74,7 @@ SYNC_NOW_STARTED_ALERT = "⏳"
 SYNC_ALREADY_RUNNING = "✅ Синхронизация уже выполняется."
 SYNC_SETTINGS_NOT_CONFIGURED = "🚫 Синхронизация не настроена или отключена \\(проверьте имя пользователя и статус авто\\-синхронизации\\)\\."
 SYNC_GETTING_LIKES_FOR_FORMAT = "⏳"
-SYNC_ERROR_GETTING_LIKES_FORMAT = "🚫 Ошибка получения медиатеки для {sc_username}\\. Подробности в журнале ошибок \\(/start \\- Журнал ошибок\\)\\." # ИСПРАВЛЕНО
+SYNC_ERROR_GETTING_LIKES_FORMAT = "🚫 Ошибка получения медиатеки для {sc_username}\\. Подробности в журнале ошибок \\(/start \\- Журнал ошибок\\)\\."
 SYNC_ERROR_GETTING_LIKES_TIMEOUT_FORMAT = "🚫 Ошибка получения медиатеки \\(таймаут\\) для '{sc_username}': {error_details}\\. Подробности в журнале\\."
 SYNC_NO_LIKES_FOUND_FORMAT = (
     "❌ Треки не найдены или список пуст\\.\n\n"

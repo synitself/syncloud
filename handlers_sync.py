@@ -30,18 +30,18 @@ async def sync_user_likes_command(
     source_of_call = "unknown"
 
     if update:
-        if update.message:  # Command /synclikesnow
+        if update.message:
             user_id = update.message.from_user.id
             chat_id = update.message.chat_id
             effective_message = update.message
             source_of_call = "command"
-            try:  # Delete command message
+            try:
                 await update.message.delete()
                 logger.debug(
                     f"Command message {update.message.message_id} for synclikesnow deleted for user {user_id}.")
             except telegram.error.TelegramError as e_del_cmd:
                 logger.warning(f"Could not delete synclikesnow command message for user {user_id}: {e_del_cmd}")
-        elif update.callback_query and update.callback_query.message:  # Button press
+        elif update.callback_query and update.callback_query.message:
             user_id = update.callback_query.from_user.id
             chat_id = update.callback_query.message.chat_id
             effective_message = update.callback_query.message
@@ -53,7 +53,7 @@ async def sync_user_likes_command(
         else:
             logger.warning("sync_user_likes_command вызван с неизвестным типом Update.");
             return
-    elif direct_user_id and direct_chat_id:  # Scheduler
+    elif direct_user_id and direct_chat_id:
         user_id = direct_user_id
         chat_id = direct_chat_id
         source_of_call = "scheduler"
@@ -75,7 +75,7 @@ async def sync_user_likes_command(
                                                   custom_text=ui_texts.SYNC_ALREADY_RUNNING, parse_mode=None)
         return
 
-    if not await sync_lock.acquire():  # Should not happen if not locked, but as a safeguard
+    if not await sync_lock.acquire():
         logger.warning(
             f"Не удалось захватить лок для пользователя {user_id} (source: {source_of_call}), хотя он не был заблокирован. Пропускаем.");
         return
@@ -89,13 +89,13 @@ async def sync_user_likes_command(
         if not settings or not settings.get('sync_enabled') or not str(settings.get('soundcloud_username', '')).strip():
             logger.info(
                 f"Синхронизация для user_id {user_id} не будет запущена (проверка после захвата лока): sync_enabled={settings.get('sync_enabled') if settings else 'N/A'}, sc_username='{settings.get('soundcloud_username') if settings else 'N/A'}'")
-            if source_of_call != "scheduler":  # Only notify user if it's a direct command/action
+            if source_of_call != "scheduler":
                 await update_or_create_status_message(user_id, chat_id, context.bot_data, context.bot,
                                                       custom_text=ui_texts.SYNC_SETTINGS_NOT_CONFIGURED,
                                                       parse_mode=ParseMode.MARKDOWN_V2)
-            else:  # For scheduler, just ensure status is up-to-date if settings changed
+            else:
                 await update_user_status_message(user_id, chat_id, context.bot_data, context.bot)
-            return  # Exits the try block, finally will release lock
+            return
 
         sc_username_raw = cast(str, settings['soundcloud_username'])
         sc_username_escaped = escape_markdown_v2(sc_username_raw)
@@ -104,7 +104,6 @@ async def sync_user_likes_command(
         await update_or_create_status_message(user_id, chat_id, context.bot_data, context.bot,
                                               custom_text=initial_sync_status_text, parse_mode=ParseMode.MARKDOWN_V2)
 
-        # Re-fetch settings in case status_message_id was created/updated
         settings_after_initial_update = db.get_user_settings(user_id)
         status_message_id_for_sync_progress = settings_after_initial_update.get(
             'status_message_id') if settings_after_initial_update else None
@@ -121,7 +120,7 @@ async def sync_user_likes_command(
             process_ytdlp = await asyncio.create_subprocess_exec(*ytdlp_cmd, stdout=asyncio.subprocess.PIPE,
                                                                  stderr=asyncio.subprocess.PIPE)
             stdout, stderr = await asyncio.wait_for(process_ytdlp.communicate(),
-                                                    timeout=300)  # 5 min timeout for yt-dlp
+                                                    timeout=300)
             output_str = stdout.decode(errors='ignore').strip()
             stderr_str = stderr.decode(errors='ignore').strip()
 
@@ -130,14 +129,14 @@ async def sync_user_likes_command(
                                          url.strip().startswith("https://soundcloud.com/")]
                 if stderr_str: logger.info(f"yt-dlp stderr (успех) для {sc_username_raw}: {stderr_str[:200]}")
             elif process_ytdlp.returncode != 0:
-                err_yt = stderr_str[:200] if stderr_str else output_str[:200]  # Prioritize stderr
+                err_yt = stderr_str[:200] if stderr_str else output_str[:200]
                 logger.error(f"yt-dlp failed for {sc_username_raw}. RC: {process_ytdlp.returncode}. Error: {err_yt}")
                 db.log_user_error(user_id, f"Ошибка yt-dlp при получении лайков: {err_yt}",
                                   context_info=soundcloud_likes_url)
                 current_status_message_text_for_finally = ui_texts.SYNC_ERROR_GETTING_LIKES_FORMAT.format(
                     sc_username=sc_username_escaped)
                 return  # Exits try, goes to finally
-            elif not output_str:  # Successful return code, but empty output
+            elif not output_str:
                 logger.info(
                     f"yt-dlp не вернул URL для {sc_username_raw} (возможно, нет лайков или приватный профиль). stderr: {stderr_str[:200]}")
                 # track_urls_from_likes will remain empty
@@ -165,7 +164,7 @@ async def sync_user_likes_command(
                 next_sync_msk = next_sync_utc.astimezone(msk_tz)
                 return escape_markdown_v2(f"{next_sync_msk.strftime('%H:%M %d.%m.%Y')} (МСК)")
             return escape_markdown_v2(
-                "после текущего цикла")  # Should ideally not happen if last_sync_timestamp updated
+                "после текущего цикла")
 
         if not track_urls_from_likes:
             db.update_user_settings(user_id, last_sync_timestamp=datetime.now(timezone.utc))
@@ -190,7 +189,7 @@ async def sync_user_likes_command(
                 total_new_to_process_count = len(new_urls_to_process)
                 sent_successfully_count = 0
                 errors_during_sync_count = 0
-                delay_between_sends = 1.2  # Increased slightly
+                delay_between_sends = 1.2
 
                 for i, track_url_to_process in enumerate(new_urls_to_process):
                     track_short_name = track_url_to_process.split('/')[-1][:25]
@@ -203,11 +202,10 @@ async def sync_user_likes_command(
                         track_short_name=escape_markdown_v2(track_short_name)
                     )
 
-                    # Re-fetch status_message_id inside loop in case it gets recreated by user interaction / error
                     current_settings_iter = db.get_user_settings(user_id)
                     status_msg_id_for_track_dl = current_settings_iter.get(
                         'status_message_id') if current_settings_iter else None
-                    if not status_msg_id_for_track_dl and status_message_id_for_sync_progress:  # Fallback to earlier ID
+                    if not status_msg_id_for_track_dl and status_message_id_for_sync_progress:
                         status_msg_id_for_track_dl = status_message_id_for_sync_progress
                     if not status_msg_id_for_track_dl:
                         logger.error(
@@ -242,7 +240,7 @@ async def sync_user_likes_command(
             await update_or_create_status_message(user_id, chat_id, context.bot_data, context.bot,
                                                   custom_text=current_status_message_text_for_finally,
                                                   parse_mode=ParseMode.MARKDOWN_V2)
-        else:  # If no specific final message was set (e.g., early exit before message generation), update to standard status
+        else:
             await update_user_status_message(user_id, chat_id, context.bot_data, context.bot)
 
         if sync_lock.locked(): sync_lock.release()
@@ -265,12 +263,12 @@ async def scheduled_sync_task(context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Планировщик: Запуск синхронизации для user_id {user_id} (SC: {sc_username}).")
         try:
             await sync_user_likes_command(None, context, direct_user_id=user_id, direct_chat_id=chat_id)
-            await asyncio.sleep(20)  # Increased delay between users in scheduler
+            await asyncio.sleep(20)
         except telegram.error.Forbidden as e_forbidden:
             logger.warning(
                 f"Планировщик: Бот заблокирован пользователем {user_id} или чат не найден. Ошибка: {e_forbidden}")
             db.update_user_settings(user_id, sync_enabled=False)
-            settings = db.get_user_settings(user_id)  # Get current settings to find status_message_id
+            settings = db.get_user_settings(user_id)
             if settings and settings.get('status_message_id'):
                 try:
                     await context.bot.delete_message(chat_id=chat_id, message_id=settings['status_message_id'])
@@ -285,7 +283,7 @@ async def scheduled_sync_task(context: ContextTypes.DEFAULT_TYPE):
                               context_info="Планировщик")
             try:
                 await update_user_status_message(user_id, chat_id, context.bot_data,
-                                                 context.bot)  # Try to update status to normal
+                                                 context.bot)
             except Exception as e_status_update:
                 logger.error(
                     f"Планировщик: Не удалось обновить статусное сообщение для user {user_id} после ошибки: {e_status_update}")

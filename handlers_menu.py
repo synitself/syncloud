@@ -217,17 +217,17 @@ async def _edit_or_reply_menu_message(
 
     try:
         if query and query.message:
-            if query.message.text == text and query.message.reply_markup == reply_markup and query.message.parse_mode == parse_mode:  # check parse_mode too
+            if query.message.text == text and query.message.reply_markup == reply_markup and query.message.parse_mode == parse_mode:
                 await query.answer();
                 return
             await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
             context.user_data[LAST_MENU_MSG_ID_KEY] = query.message.message_id
-        elif update.message and target_msg_id:  # Edit previous menu message if /start is used again
+        elif update.message and target_msg_id:
             await context.bot.edit_message_text(
                 chat_id=effective_chat_id, message_id=target_msg_id,
                 text=text, reply_markup=reply_markup, parse_mode=parse_mode
             )
-        elif update.message:  # Send new menu message
+        elif update.message:
             msg = await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
             context.user_data[LAST_MENU_MSG_ID_KEY] = msg.message_id
     except telegram.error.BadRequest as e:
@@ -254,9 +254,9 @@ async def _edit_or_reply_menu_message(
             if not new_msg_sent: logger.error(
                 f"Cannot send new menu: no update.message and no query.message after edit_not_found, or send failed.")
 
-        else:  # Other BadRequest errors
+        else:
             logger.error(f"BadRequest editing/sending menu: {e} (Text: '{text[:100]}...', ParseMode: {parse_mode})")
-            if current_message_to_handle and parse_mode:  # Try sending without parse_mode as fallback
+            if current_message_to_handle and parse_mode:
                 try:
                     fallback_text = f"{text}\n(Ошибка форматирования, меню отображено без него)"
                     msg = await current_message_to_handle.reply_text(fallback_text, reply_markup=reply_markup,
@@ -264,7 +264,7 @@ async def _edit_or_reply_menu_message(
                     context.user_data[LAST_MENU_MSG_ID_KEY] = msg.message_id
                 except Exception as e_send_fallback:
                     logger.error(f"Fallback send_message after BadRequest also failed: {e_send_fallback}")
-            elif not parse_mode and current_message_to_handle:  # Error even without parse_mode
+            elif not parse_mode and current_message_to_handle:
                 logger.error(f"Error even without parse_mode or no current_message_to_handle for fallback.")
     except Exception as e_other:
         logger.error(f"Unexpected error in _edit_or_reply_menu_message: {e_other}")
@@ -284,10 +284,10 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> st
 
     if not db.get_user_settings(user_id):
         db.update_user_settings(user_id, is_new_user_setup=True)
-        await update_user_status_message(user_id, chat_id, context.bot_data, context.bot)  # Pin status on first setup
+        await update_user_status_message(user_id, chat_id, context.bot_data, context.bot)
     else:
         await update_user_status_message(user_id, chat_id, context.bot_data,
-                                         context.bot)  # Ensure status is up and pinned
+                                         context.bot)
 
     context.user_data.pop(AWAITING_TEXT_INPUT_KEY, None)
     context.user_data.pop(ERROR_LOG_CURRENT_PAGE_KEY, None)
@@ -302,16 +302,14 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> st
     reply_markup = InlineKeyboardMarkup(keyboard)
     current_query = cast(CallbackQuery, update.callback_query) if update.callback_query else None
 
-    # Delete previous menu message if /start is used and an old menu message ID exists
     if update.message and context.user_data.get(LAST_MENU_MSG_ID_KEY):
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=context.user_data[LAST_MENU_MSG_ID_KEY])
             logger.debug(
                 f"Предыдущее меню {context.user_data[LAST_MENU_MSG_ID_KEY]} удалено перед показом нового главного меню.")
-            context.user_data.pop(LAST_MENU_MSG_ID_KEY, None)  # Clear the key for the deleted message
+            context.user_data.pop(LAST_MENU_MSG_ID_KEY, None)
         except telegram.error.TelegramError as e_del_old:
             logger.warning(f"Не удалось удалить старое меню {context.user_data.get(LAST_MENU_MSG_ID_KEY)}: {e_del_old}")
-            # If deletion failed, _edit_or_reply_menu_message will attempt to edit it.
 
     await _edit_or_reply_menu_message(update, context, current_query, ui_texts.MENU_TITLE, reply_markup,
                                       ParseMode.MARKDOWN_V2)
@@ -323,7 +321,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     query = cast(CallbackQuery, update.callback_query)
     user_id = query.from_user.id
-    chat_id = query.message.chat_id if query.message else user_id  # Should always have query.message here
+    chat_id = query.message.chat_id if query.message else user_id
     choice = query.data
 
     if query.message: context.user_data[LAST_MENU_MSG_ID_KEY] = query.message.message_id
@@ -343,9 +341,8 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         next_state = INFO_MENU
     elif choice == "sync_now_nav":
         logger.info(f"User {user_id} initiated sync from menu button.")
-        await query.answer(text=ui_texts.SYNC_NOW_STARTED_ALERT, show_alert=False)  # Give feedback that it started
+        await query.answer(text=ui_texts.SYNC_NOW_STARTED_ALERT, show_alert=False)
         asyncio.create_task(sync_user_likes_command(update, context, direct_user_id=user_id, direct_chat_id=chat_id))
-        # Menu remains open, status message will update with progress
     elif choice == "error_log_nav":
         await query.answer()
         context.user_data[ERROR_LOG_CURRENT_PAGE_KEY] = 0
@@ -371,7 +368,7 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.answer(ui_texts.MENU_CLOSED_CONFIRMATION_SHORT, show_alert=True)
 
         await update_user_status_message(user_id, chat_id, context.bot_data,
-                                         context.bot)  # Ensure status is current and pinned
+                         context.bot)
 
         context.user_data.pop(LAST_MENU_MSG_ID_KEY, None)
         context.user_data.pop(AWAITING_TEXT_INPUT_KEY, None)
@@ -379,11 +376,10 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         next_state = ConversationHandler.END
     elif choice == "back_to_main_menu_nav":
         await query.answer()
-        context.user_data.pop(ERROR_LOG_CURRENT_PAGE_KEY, None)  # Clear error log page on going back to main
+        context.user_data.pop(ERROR_LOG_CURRENT_PAGE_KEY, None)
         next_state = await menu_command(update, context)
-        return next_state  # Return early as menu_command handles status update
+        return next_state
 
-    # For other main menu actions (settings, info, error log) that keep menu open, ensure status is up-to-date
     if choice not in ["close_menu_nav", "back_to_main_menu_nav", "sync_now_nav"]:
         await update_user_status_message(user_id, chat_id, context.bot_data, context.bot)
 
@@ -401,14 +397,14 @@ async def info_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def display_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE,
                                 query: Optional[CallbackQuery] = None) -> str:
     effective_user_id = update.effective_user.id if update.effective_user else (query.from_user.id if query else None)
-    if not effective_user_id: return ConversationHandler.END  # Should not happen
+    if not effective_user_id: return ConversationHandler.END
 
     settings = db.get_user_settings(effective_user_id)
-    if not settings:  # Should have been created by menu_command if new
+    if not settings:
         logger.error(f"Settings not found for user {effective_user_id} in display_settings_menu. This is unexpected.")
-        db.update_user_settings(effective_user_id, is_new_user_setup=True)  # Attempt to recover
+        db.update_user_settings(effective_user_id, is_new_user_setup=True)
         settings = db.get_user_settings(effective_user_id)
-        if not settings:  # Still not found
+        if not settings:
             await _edit_or_reply_menu_message(update, context, query, ui_texts.SETTINGS_DB_ERROR, None, parse_mode=None)
             return await menu_command(update, context)  # Go back to main menu
 
@@ -439,16 +435,16 @@ async def display_settings_menu(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def settings_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
     query = cast(CallbackQuery, update.callback_query)
-    await query.answer()  # Answer immediately
+    await query.answer()
     uid = query.from_user.id
     chat_id = query.message.chat_id if query.message else uid
     choice = query.data
 
     if query.message: context.user_data[LAST_MENU_MSG_ID_KEY] = query.message.message_id
-    settings = db.get_user_settings(uid)  # Get fresh settings
-    if not settings:  # Should not happen
+    settings = db.get_user_settings(uid)
+    if not settings:
         logger.error(f"Settings not found for user {uid} in settings_menu_callback. This is unexpected.")
-        if query.message: await query.message.reply_text(ui_texts.SETTINGS_DB_ERROR);  # Simple reply if menu edit fails
+        if query.message: await query.message.reply_text(ui_texts.SETTINGS_DB_ERROR);
         return await menu_command(update, context)
 
     action_taken_requires_settings_redraw = False
@@ -481,7 +477,6 @@ async def settings_menu_callback(update: Update, context: ContextTypes.DEFAULT_T
              InlineKeyboardButton(ui_texts.BUTTON_PERIOD_HOURS_FORMAT.format(48), callback_data="period_48h")],
             [InlineKeyboardButton(ui_texts.BUTTON_PERIOD_CUSTOM_INPUT, callback_data="period_custom_input")],
             [InlineKeyboardButton(ui_texts.BUTTON_BACK_TO_SETTINGS, callback_data="back_to_settings_nav")]
-            # Back to settings menu (redraws it)
         ]
         await _edit_or_reply_menu_message(update, context, query, ui_texts.SETTINGS_SYNC_PERIOD_PROMPT,
                                           InlineKeyboardMarkup(kb_list), parse_mode=None)
@@ -501,16 +496,15 @@ async def settings_menu_callback(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data[AWAITING_TEXT_INPUT_KEY] = "sync_period"
         next_state = AWAIT_SYNC_PERIOD
     elif choice == "back_to_main_menu_nav":
-        context.user_data.pop(AWAITING_TEXT_INPUT_KEY, None)  # Clear input flag
+        context.user_data.pop(AWAITING_TEXT_INPUT_KEY, None)
         next_state = await menu_command(update, context)
-        return next_state  # Return early, menu_command handles status
-    elif choice == "back_to_settings_nav":  # From period selection back to settings
+        return next_state
+    elif choice == "back_to_settings_nav":
         action_taken_requires_settings_redraw = True
 
     if action_taken_requires_settings_redraw and next_state == SETTINGS_MENU:
-        await display_settings_menu(update, context, query)  # Redraw if still in settings
+        await display_settings_menu(update, context, query)
 
-    # Update status after any settings change or if returning to settings menu
     if next_state == SETTINGS_MENU:
         await update_user_status_message(uid, chat_id, context.bot_data, context.bot)
 
@@ -536,7 +530,7 @@ async def received_sc_username(update: Update, context: ContextTypes.DEFAULT_TYP
     elif len(sc_user_input) < 3 or len(sc_user_input) > 30:
         error_text_to_show = ui_texts.SETTINGS_USERNAME_LENGTH_ERROR
 
-    if msg_to_delete:  # Delete user's input message
+    if msg_to_delete:
         try:
             await msg_to_delete.delete()
         except Exception as e_del:
@@ -544,13 +538,12 @@ async def received_sc_username(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if error_text_to_show:
         await _edit_or_reply_menu_message(update, context, None, error_text_to_show, rm_err, ParseMode.MARKDOWN_V2)
-        context.user_data[AWAITING_TEXT_INPUT_KEY] = "sc_username"  # Set flag again
+        context.user_data[AWAITING_TEXT_INPUT_KEY] = "sc_username"
         return AWAIT_SC_USERNAME
 
     db.update_user_settings(uid, soundcloud_username=sc_user_input)
-    # Status will be updated by display_settings_menu or back_to_settings_from_input_callback
     return await display_settings_menu(cast(Update, update), context,
-                                       None)  # Pass None for query as it's from MessageHandler
+                                       None)
 
 
 async def received_sync_period(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
@@ -572,7 +565,7 @@ async def received_sync_period(update: Update, context: ContextTypes.DEFAULT_TYP
     except ValueError:
         error_text_to_show = ui_texts.SETTINGS_PERIOD_INVALID_FORMAT_ERROR
 
-    if msg_to_delete:  # Delete user's input message
+    if msg_to_delete:
         try:
             await msg_to_delete.delete()
         except Exception as e_del:
@@ -580,10 +573,9 @@ async def received_sync_period(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if error_text_to_show:
         await _edit_or_reply_menu_message(update, context, None, error_text_to_show, rm_err, ParseMode.MARKDOWN_V2)
-        context.user_data[AWAITING_TEXT_INPUT_KEY] = "sync_period"  # Set flag again
+        context.user_data[AWAITING_TEXT_INPUT_KEY] = "sync_period"
         return AWAIT_SYNC_PERIOD
 
-    # Status will be updated by display_settings_menu or back_to_settings_from_input_callback
     return await display_settings_menu(cast(Update, update), context, None)
 
 
@@ -592,10 +584,9 @@ async def back_to_settings_from_input_callback(update: Update, context: ContextT
     await query.answer()
     user_id = query.from_user.id
     chat_id = query.message.chat_id if query.message else user_id
-    context.user_data.pop(AWAITING_TEXT_INPUT_KEY, None)  # Clear the input flag
+    context.user_data.pop(AWAITING_TEXT_INPUT_KEY, None)
 
     if query.message: context.user_data[LAST_MENU_MSG_ID_KEY] = query.message.message_id
-    # display_settings_menu will be called, which will then call update_user_status_message
     return await display_settings_menu(update, context, query)
 
 
@@ -622,7 +613,7 @@ async def display_error_log_menu(update: Update, context: ContextTypes.DEFAULT_T
                 try:
                     timestamp_str = timestamp_dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
                 except Exception:
-                    timestamp_str = timestamp_dt.strftime("%Y-%m-%d %H:%M:%S")  # Fallback
+                    timestamp_str = timestamp_dt.strftime("%Y-%m-%d %H:%M:%S")
 
             escaped_error_message = escape_markdown_v2(err.get('error_message', 'Нет описания'))
             escaped_context_info = escape_markdown_v2(err.get('context_info', ''))
@@ -664,12 +655,11 @@ async def error_log_menu_callback(update: Update, context: ContextTypes.DEFAULT_
     if choice == "clear_error_log":
         db.clear_user_errors(user_id)
         await query.answer(ui_texts.ERROR_LOG_CLEARED_ALERT, show_alert=True)
-        context.user_data[ERROR_LOG_CURRENT_PAGE_KEY] = 0  # Reset to first page
+        context.user_data[ERROR_LOG_CURRENT_PAGE_KEY] = 0
         await display_error_log_menu(update, context, query)
-        # No need to update status message here, it's not directly affected by error log
     elif choice == "back_to_main_from_log":
         context.user_data.pop(ERROR_LOG_CURRENT_PAGE_KEY, None)
-        return await menu_command(update, context)  # menu_command handles status update
+        return await menu_command(update, context)
     elif choice == "err_log_prev_page":
         if current_page > 0: context.user_data[ERROR_LOG_CURRENT_PAGE_KEY] = current_page - 1
         await display_error_log_menu(update, context, query)

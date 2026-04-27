@@ -1,6 +1,10 @@
 python-telegram-bot
 mutagen
+Pillow
+pyrogram
+tgcrypto
 yt-dlp
 scdl
 httpx
 apscheduler
+python-dotenv

@@ -12,8 +12,8 @@ import telegram.error
 
 try:
     from config import TELEGRAM_BOT_TOKEN, DOWNLOAD_FOLDER, BOT_VERSION
-except ImportError:
-    print("Критическая ошибка: Файл config.py не найден или отсутствует BOT_VERSION...")
+except Exception as config_error:
+    print(f"Критическая ошибка конфигурации: {config_error}")
     TELEGRAM_BOT_TOKEN = None
     DOWNLOAD_FOLDER = "downloads"
     BOT_VERSION = "N/A"
@@ -79,9 +79,23 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         logger.warning(f"Сетевая ошибка при обработке обновления: {context.error}")
 
 
+async def post_shutdown(application: Application) -> None:
+    from pyrogram_sender import stop_pyrogram_client
+    await stop_pyrogram_client()
+    logger.info("Bot post_shutdown: Pyrogram client stopped.")
+
+
 async def post_init(application: Application) -> None:
     application.bot_data["BOT_VERSION"] = BOT_VERSION
     logger.info(f"Bot post_init: Установлена версия бота: {BOT_VERSION}")
+
+    # Pre-init Pyrogram client so first upload is fast
+    try:
+        from pyrogram_sender import get_pyrogram_client
+        await get_pyrogram_client()
+        logger.info("Bot post_init: Pyrogram client pre-initialized.")
+    except Exception as e:
+        logger.warning(f"Bot post_init: Failed to pre-init Pyrogram client: {e}")
     logger.info("Bot post_init: Обновление статусных сообщений для активных пользователей...")
     all_users_with_status_msg = db.get_all_users_with_status_message()
 
@@ -134,6 +148,7 @@ def main() -> None:
         .write_timeout(130.0)
         .media_write_timeout(360.0)
         .post_init(post_init)
+        .post_shutdown(post_shutdown)
         .build()
     )
 
